@@ -220,4 +220,4 @@ if __name__ == '__main__':
         print(f'El informe de permisos se ha generado correctamente como {OUTPUT_FILE}')
     else:
         print('Ocurrieron errores durante la ejecución. Consulte el archivo drive_audit.log para más detalles.')
-        
+
