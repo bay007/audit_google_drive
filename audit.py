@@ -17,7 +17,13 @@ logging.basicConfig(
 
 # Definir los alcances (scopes) requeridos
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
+
+# Archivo que almacena los tokens de autenticación (acceso y actualización)
+# IMPORTANTE: Este archivo contiene información sensible que permite acceder 
+# a Google Drive. No debe ser compartido ni incluido en repositorios públicos.
+# Se recomienda añadirlo a .gitignore y establecer permisos adecuados en el sistema.
 TOKEN_FILE = 'token.json'
+
 CREDENTIALS_FILE = 'credentials.json'
 OUTPUT_FILE = 'drive_permissions_report.csv'
 
@@ -214,3 +220,4 @@ if __name__ == '__main__':
         print(f'El informe de permisos se ha generado correctamente como {OUTPUT_FILE}')
     else:
         print('Ocurrieron errores durante la ejecución. Consulte el archivo drive_audit.log para más detalles.')
+        
