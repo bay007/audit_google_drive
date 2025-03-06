@@ -19,11 +19,7 @@ logging.basicConfig(
 SCOPES = ['https://www.googleapis.com/auth/drive.metadata.readonly']
 
 # Archivo que almacena los tokens de autenticación (acceso y actualización)
-# IMPORTANTE: Este archivo contiene información sensible que permite acceder 
-# a Google Drive. No debe ser compartido ni incluido en repositorios públicos.
-# Se recomienda añadirlo a .gitignore y establecer permisos adecuados en el sistema.
 TOKEN_FILE = 'token.json'
-
 CREDENTIALS_FILE = 'credentials.json'
 OUTPUT_FILE = 'drive_permissions_report.csv'
 
@@ -31,7 +27,6 @@ def authenticate():
     """Autentica al usuario y devuelve el servicio de la API de Google Drive."""
     creds = None
     
-    # El archivo token.json almacena los tokens de acceso y actualización del usuario
     if os.path.exists(TOKEN_FILE):
         try:
             creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
@@ -39,14 +34,12 @@ def authenticate():
             logging.error(f"Error al leer el archivo de token: {e}")
             return None
     
-    # Si no hay credenciales válidas, inicia sesión
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             try:
                 creds.refresh(Request())
             except Exception as e:
                 logging.error(f"Error al actualizar el token: {e}")
-                # Si falla la actualización, mejor iniciar nuevo flujo de autenticación
                 creds = None
                 
         if not creds:
@@ -59,7 +52,6 @@ def authenticate():
                     CREDENTIALS_FILE, SCOPES)
                 creds = flow.run_local_server(port=0)
                 
-                # Guarda las credenciales para la próxima ejecución
                 with open(TOKEN_FILE, 'w') as token:
                     token.write(creds.to_json())
                     
@@ -103,7 +95,7 @@ def list_files(service, query, page_token=None, collected_items=None):
     try:
         results = service.files().list(
             q=query,
-            fields="nextPageToken, files(id, name, mimeType, parents)",
+            fields="nextPageToken, files(id, name, mimeType, parents, owners)",
             pageSize=1000,
             pageToken=page_token
         ).execute()
@@ -111,7 +103,6 @@ def list_files(service, query, page_token=None, collected_items=None):
         items = results.get('files', [])
         collected_items.extend(items)
         
-        # Manejar paginación si hay más resultados
         next_page_token = results.get('nextPageToken')
         if next_page_token:
             return list_files(service, query, next_page_token, collected_items)
@@ -140,33 +131,36 @@ def traverse_drive(service, parent_id, parent_path, csv_writer, items_processed=
             item_id = item.get('id')
             item_type = item.get('mimeType', 'unknown')
             
+            # Obtener información de los owners
+            owners = item.get('owners', [])
+            owner_str = ", ".join([owner.get('emailAddress', 'N/A') for owner in owners]) if owners else "N/A"
+            
             logging.info(f"Procesando: {item_path}")
             
             permissions = get_permissions(service, item_id)
             
-            # Si no hay permisos, registrar al menos la entrada del archivo
+            # Si no hay permisos, registrar la entrada del archivo con información del owner
             if not permissions:
-                csv_writer.writerow([item_path, item_type, 'N/A', 'N/A', 'N/A'])
+                csv_writer.writerow([item_path, item_type, owner_str, 'N/A', 'N/A', 'N/A'])
                 items_processed += 1
             else:
                 for perm in permissions:
                     csv_writer.writerow([
                         item_path, 
                         item_type, 
+                        owner_str,
                         perm.get('emailAddress', 'N/A'), 
                         perm.get('role', 'N/A'),
                         perm.get('type', 'N/A')
                     ])
                     items_processed += 1
             
-            # Verificar límite después de procesar cada archivo
             if max_items and items_processed >= max_items:
                 return items_processed
                 
-            # Recorrer carpetas recursivamente
             if item_type == 'application/vnd.google-apps.folder':
                 items_processed = traverse_drive(service, item_id, item_path, csv_writer, 
-                                               items_processed, max_items)
+                                                 items_processed, max_items)
                 
         except Exception as e:
             logging.error(f"Error al procesar el elemento {item.get('id', 'desconocido')}: {e}")
@@ -183,16 +177,14 @@ def main(max_items=None):
             logging.error("No se pudo autenticar con Google Drive")
             return False
             
-        # Crear directorio para el archivo de salida si no existe
         output_dir = os.path.dirname(OUTPUT_FILE)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
         with open(OUTPUT_FILE, mode='w', newline='', encoding='utf-8') as file:
             writer = csv.writer(file)
-            writer.writerow(['Path', 'Type', 'User', 'Role', 'Permission Type'])
+            writer.writerow(['Path', 'Type', 'Owner', 'User', 'Role', 'Permission Type'])
             
-            # Comienza desde la carpeta raíz del usuario
             items_processed = traverse_drive(service, 'root', '', writer, 0, max_items)
             
         logging.info(f'El informe de permisos se ha generado como {OUTPUT_FILE}')
@@ -206,9 +198,7 @@ def main(max_items=None):
 if __name__ == '__main__':
     start_time = time.time()
     
-    # Limitar el número de elementos a procesar (opcional)
-    # max_items = 10000  # Descomentar para establecer un límite
-    max_items = None
+    max_items = None  # Puedes establecer un límite descomentando y modificando esta línea
     
     success = main(max_items)
     
@@ -220,4 +210,3 @@ if __name__ == '__main__':
         print(f'El informe de permisos se ha generado correctamente como {OUTPUT_FILE}')
     else:
         print('Ocurrieron errores durante la ejecución. Consulte el archivo drive_audit.log para más detalles.')
-
